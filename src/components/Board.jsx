@@ -83,7 +83,9 @@ export default function Board({ leads: initial, owners, allowed, columns }) {
               </header>
               <div className="flex flex-col gap-2.5 overflow-y-auto p-2.5 pt-0">
                 {!items.length && (
-                  <div className={`grid place-items-center rounded-[18px] border border-dashed px-4 py-7 text-center text-xs transition ${over === s.name ? "border-brand/60 text-brand" : "border-line-strong text-faint"}`}>
+                  <div
+                    className={`grid place-items-center rounded-[18px] border border-dashed px-4 py-7 text-center text-xs transition ${over === s.name ? "border-brand/60 text-brand" : "border-line-strong text-faint"}`}
+                  >
                     {over === s.name ? "Drop to move here" : "No leads"}
                   </div>
                 )}
@@ -115,7 +117,11 @@ export default function Board({ leads: initial, owners, allowed, columns }) {
                         </>
                       ) : (
                         <span className="flex-1">
-                          <span className="rounded-full bg-amber-400/15 px-2 py-0.5 font-medium text-amber-300">Unassigned</span>
+                          {l.status === "Won" ? (
+                            <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 font-medium text-emerald-400">Client</span>
+                          ) : (
+                            <span className="rounded-full bg-amber-400/15 px-2 py-0.5 font-medium text-amber-300">Unassigned</span>
+                          )}
                         </span>
                       )}
                       <span className="flex shrink-0 items-center gap-1 text-[11px] text-faint">

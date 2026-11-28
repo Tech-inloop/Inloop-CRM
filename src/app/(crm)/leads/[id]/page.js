@@ -14,11 +14,25 @@ import Timeline from "@/components/Timeline";
 import FollowUp from "@/components/FollowUp";
 import LeadContacts from "@/components/LeadContacts";
 import DeleteLead from "@/components/DeleteLead";
+import LeadNeeds from "@/components/LeadNeeds";
 import { requireMember } from "@/lib/auth";
 import { getLead, listAssignees, listGuests, listMembers, openLeadCounts } from "@/lib/leads";
-import { canSeeAllLeads, salesTeam, canAssign, canBookDiscovery, canBookProposal, canEnterCommercials, canOnboard, canSeeLeads, isSalesHead, isStrategist, statusOptions } from "@/lib/permissions";
+import {
+  canSeeAllLeads,
+  salesTeam,
+  canAssign,
+  canBookDiscovery,
+  canBookProposal,
+  canEnterCommercials,
+  canOnboard,
+  canSetNeeds,
+  canSeeLeads,
+  isSalesHead,
+  isStrategist,
+  statusOptions,
+} from "@/lib/permissions";
 import { fmtDateTime, fullName } from "@/lib/format";
-import { DISCOVERY_STATUS, statusColor } from "@/lib/constants";
+import { DISCOVERY_STATUS, PROPOSAL_STATUS, STATUS_NAMES, statusColor } from "@/lib/constants";
 
 export async function generateMetadata({ params }) {
   const { id } = await params;
@@ -109,6 +123,8 @@ export default async function LeadPage({ params }) {
                     <Avatar name={owner.name} size={22} />
                     {owner.name}
                   </span>
+                ) : lead.status === "Won" ? (
+                  <span className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-medium text-emerald-400">Client</span>
                 ) : (
                   <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-xs font-medium text-amber-300">Unassigned</span>
                 )}
@@ -123,11 +139,29 @@ export default async function LeadPage({ params }) {
         </div>
 
         <dl className="relative grid grid-cols-1 gap-2.5 px-6 pb-6 sm:grid-cols-2 sm:px-8 sm:pb-8 md:grid-cols-3">
-          <Detail label="Service" icon="sparkle">{lead.service}</Detail>
-          <Detail label="Budget" icon="rupee">{lead.budget}</Detail>
-          <Detail label="Location" icon="pin">{lead.location}</Detail>
-          <Detail label="Phone" icon="phone">{lead.phone && <a href={`tel:${phone}`} className="hover:text-brand">{lead.phone}</a>}</Detail>
-          <Detail label="Email" icon="mail">{lead.email && <a href={`mailto:${lead.email}`} className="break-all hover:text-brand">{lead.email}</a>}</Detail>
+          <Detail label="Service" icon="sparkle">
+            {lead.service}
+          </Detail>
+          <Detail label="Budget" icon="rupee">
+            {lead.budget}
+          </Detail>
+          <Detail label="Location" icon="pin">
+            {lead.location}
+          </Detail>
+          <Detail label="Phone" icon="phone">
+            {lead.phone && (
+              <a href={`tel:${phone}`} className="hover:text-brand">
+                {lead.phone}
+              </a>
+            )}
+          </Detail>
+          <Detail label="Email" icon="mail">
+            {lead.email && (
+              <a href={`mailto:${lead.email}`} className="break-all hover:text-brand">
+                {lead.email}
+              </a>
+            )}
+          </Detail>
           <Detail label="Source" icon="link">
             <span className="capitalize">{lead.source}</span>
             {lead.newsletter ? <span className="font-normal text-muted"> · newsletter</span> : null}
@@ -167,7 +201,9 @@ export default async function LeadPage({ params }) {
           <div className="relative px-6 pb-6 sm:px-8 sm:pb-8">
             <div className="tint-lavender rounded-2xl p-5">
               <div className="text-xs font-medium text-ink/60">Project details</div>
-              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed"><Linkify text={lead.details} /></p>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">
+                <Linkify text={lead.details} />
+              </p>
             </div>
           </div>
         )}
@@ -188,13 +224,16 @@ export default async function LeadPage({ params }) {
                 ) : null
               }
             >
-              {brand?.stage === "active" && account ? (
-                <ClientLogin account={{ ...account, brand }} origin={process.env.CRM_URL || "https://inloophub.com"} />
-              ) : (
-                <OnboardButton leadId={lead.id} />
-              )}
+              {brand?.stage === "active" && account ? <ClientLogin account={{ ...account, brand }} origin={process.env.CRM_URL || "https://inloophub.com"} /> : <OnboardButton leadId={lead.id} />}
             </Section>
           )}
+
+          {Array.isArray(lead.needs) &&
+            (lead.needs.length > 0 || (canSetNeeds(me) && STATUS_NAMES.indexOf(lead.status) >= STATUS_NAMES.indexOf(PROPOSAL_STATUS) && !["Lost", "No Response"].includes(lead.status))) && (
+              <Section title="Client needs" sub={canSetNeeds(me) ? "What the client wants from us — pick before marking the lead Won" : "What the client wants from us"}>
+                <LeadNeeds leadId={lead.id} needs={lead.needs} canEdit={canSetNeeds(me)} />
+              </Section>
+            )}
 
           <Section title="Status" sub="Click a stage to move the lead">
             <StatusPicker lead={lead} statuses={statusOptions(me)} />
@@ -237,7 +276,13 @@ export default async function LeadPage({ params }) {
 
         <div className="flex flex-col gap-5">
           <Section title="Owner" action={lead.assigned_at ? <span className="text-[11px] text-faint">since {fmtDateTime(lead.assigned_at)}</span> : null}>
-            <OwnerPicker lead={lead} members={members} assignees={canSeeAllLeads(me) ? assignees : assignees.filter((a) => [me.id, ...salesTeam(me)].includes(a.id))} canAssign={canAssign(me)} openCounts={openCounts} />
+            <OwnerPicker
+              lead={lead}
+              members={members}
+              assignees={canSeeAllLeads(me) ? assignees : assignees.filter((a) => [me.id, ...salesTeam(me)].includes(a.id))}
+              canAssign={canAssign(me)}
+              openCounts={openCounts}
+            />
           </Section>
           <Section title="History" sub="Everything that happened on this lead">
             <Timeline events={lead.events} />

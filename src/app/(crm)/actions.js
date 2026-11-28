@@ -22,8 +22,9 @@ import {
   canSeeAllLeads,
   salesTeam,
   canSetStatus,
+  canSetNeeds,
 } from "@/lib/permissions";
-import { DISCOVERY_STATUS, GROUP_KINDS, MEETING_KINDS, MEETING_MINUTES, PROPOSAL_STATUS, ROLES, STATUS_NAMES, UPDATE_EVENTS } from "@/lib/constants";
+import { NEEDS, DISCOVERY_STATUS, GROUP_KINDS, MEETING_KINDS, MEETING_MINUTES, PROPOSAL_STATUS, ROLES, STATUS_NAMES, UPDATE_EVENTS } from "@/lib/constants";
 import { CalendarError, cancelEvent, createMeetEvent } from "@/lib/google";
 import { discoveryMessage, proposalMessage } from "@/lib/messages";
 import { announce } from "@/lib/updates";
@@ -32,18 +33,17 @@ import { shareBriefWithStrategists } from "@/lib/proposals";
 import { onboardLead } from "@/lib/clients";
 import { fmtDateTime, fullName } from "@/lib/format";
 
-const str = (v, max = 5000) => String(v ?? "").trim().slice(0, max);
+const str = (v, max = 5000) =>
+  String(v ?? "")
+    .trim()
+    .slice(0, max);
 const isUuid = (v) => /^[0-9a-f-]{36}$/i.test(String(v || ""));
 const isStaffMember = (me) => me.role === "admin" || me.role === "ops";
 
 /** Name of an active member in a sales group, or null if they can't take leads. */
 async function assigneeName(memberId) {
   if (!isUuid(memberId)) return null;
-  const { data: m } = await db()
-    .from("members")
-    .select("name, active, group_members(group:groups(kind))")
-    .eq("id", memberId)
-    .maybeSingle();
+  const { data: m } = await db().from("members").select("name, active, group_members(group:groups(kind))").eq("id", memberId).maybeSingle();
   const sales = (m?.group_members || []).some((g) => g.group?.kind === "sales");
   return m && m.active && sales ? m.name : null;
 }
@@ -63,6 +63,8 @@ export async function updateLead(id, patch) {
     if (!canSetStatus(me, lead.status, patch.status)) {
       return { ok: false, error: `Executives can set the status up to "${DISCOVERY_STATUS}". Ask an admin for the next steps.` };
     }
+    // Before Won: what the client needs (Social media, Website, Performance…) — it decides the content calendar
+    if (patch.status === "Won" && Array.isArray(lead.needs) && !lead.needs.length) return { ok: false, error: "First pick what the client needs (Client needs, on this lead) — then mark it Won." };
     changes.status = patch.status;
     events.push({ type: "status", data: { from: lead.status, to: patch.status } });
   }
@@ -128,7 +130,11 @@ export async function deleteLead(id) {
   // Its uploaded files (proposal inputs and decks) live in storage
   const { data: docs } = await db().from("lead_documents").select("storage_path").eq("lead_id", id);
   const paths = (docs || []).map((d) => d.storage_path).filter(Boolean);
-  if (paths.length) await db().storage.from("lead-docs").remove(paths).catch(() => {});
+  if (paths.length)
+    await db()
+      .storage.from("lead-docs")
+      .remove(paths)
+      .catch(() => {});
 
   const { error } = await db().from("leads").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -224,7 +230,10 @@ export async function submitFeedback({ mood, kind, message, page } = {}) {
   after(async () => {
     const { data: admins } = await db().from("members").select("id").eq("role", "admin").eq("active", true);
     const label = { problem: "A problem", idea: "An idea", general: "Feedback" }[row.kind];
-    await pushTo((admins || []).map((a) => a.id), { title: `${label} from ${me.name}`, body: text.slice(0, 140), url: "/feedback", tag: "feedback" });
+    await pushTo(
+      (admins || []).map((a) => a.id),
+      { title: `${label} from ${me.name}`, body: text.slice(0, 140), url: "/feedback", tag: "feedback" },
+    );
   });
   revalidatePath("/feedback");
   return { ok: true };
@@ -279,10 +288,7 @@ export async function createLead(_prev, formData) {
 
 /* ---------------------------- Meetings ---------------------------- */
 
-const calendarFail = (err) =>
-  err instanceof CalendarError
-    ? { ok: false, error: err.message, reconnect: err.reconnect }
-    : { ok: false, error: "Something went wrong talking to Google Calendar." };
+const calendarFail = (err) => (err instanceof CalendarError ? { ok: false, error: err.message, reconnect: err.reconnect } : { ok: false, error: "Something went wrong talking to Google Calendar." });
 
 /**
  * Books a Google Meet from the signed-in member's calendar.
@@ -356,14 +362,7 @@ export async function scheduleMeeting(leadId, kind, when, guestIds = [], extra =
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(when || "")) || isNaN(start)) return { ok: false, error: "Pick a date and time." };
   if (start.getTime() < Date.now() - 5 * 60000) return { ok: false, error: "That time is in the past." };
 
-  const { data: existing } = await db()
-    .from("meetings")
-    .select("id")
-    .eq("lead_id", leadId)
-    .eq("kind", kind)
-    .is("cancelled_at", null)
-    .gte("ends_at", new Date().toISOString())
-    .limit(1);
+  const { data: existing } = await db().from("meetings").select("id").eq("lead_id", leadId).eq("kind", kind).is("cancelled_at", null).gte("ends_at", new Date().toISOString()).limit(1);
   if (existing?.length) return { ok: false, error: `A ${MEETING_KINDS[kind].label.toLowerCase()} is already booked. Cancel it to book a new one.` };
 
   const minutes = [30, 60].includes(Number(extra.minutes)) ? Number(extra.minutes) : MEETING_MINUTES[kind];
@@ -385,7 +384,9 @@ export async function scheduleMeeting(leadId, kind, when, guestIds = [], extra =
   const invited = attendees.length ? ["the client"] : [];
   // Anyone else the client asked to bring along
   for (const e of (Array.isArray(extra.guestEmails) ? extra.guestEmails : []).slice(0, 10)) {
-    const email = String(e || "").trim().toLowerCase();
+    const email = String(e || "")
+      .trim()
+      .toLowerCase();
     if (emailOk(email) && !attendees.includes(email) && email !== me.email) {
       attendees.push(email);
       invited.push(email);
@@ -453,13 +454,8 @@ export async function scheduleMeeting(leadId, kind, when, guestIds = [], extra =
       announce("proposal_meeting", {
         lead,
         title: `Proposal meeting — ${brand} (${lead.code}) · ${fmtDateTime(start)}`,
-        body: [
-          `Service: ${lead.service || "—"} · Executive: ${executive || "—"} · Booked by ${me.name}`,
-          lead.brief ? `Brief:\n${lead.brief.slice(0, 2500)}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-      })
+        body: [`Service: ${lead.service || "—"} · Executive: ${executive || "—"} · Booked by ${me.name}`, lead.brief ? `Brief:\n${lead.brief.slice(0, 2500)}` : ""].filter(Boolean).join("\n\n"),
+      }),
     );
   }
 
@@ -503,11 +499,23 @@ export async function disconnectCalendar() {
 async function setMemberGroups(memberId, groupIds) {
   const ids = [...new Set(groupIds.filter(isUuid))];
   await db().from("group_members").delete().eq("member_id", memberId);
-  if (ids.length) await db().from("group_members").insert(ids.map((group_id) => ({ group_id, member_id: memberId })));
+  if (ids.length)
+    await db()
+      .from("group_members")
+      .insert(ids.map((group_id) => ({ group_id, member_id: memberId })));
 }
 
 /** Work email domains people can be added with (plus any in ALLOWED_DOMAIN, comma-separated). */
-const TEAM_DOMAINS = [...new Set(["inloopmedia.com", "amsglobal.io", ...String(process.env.ALLOWED_DOMAIN || "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean)])];
+const TEAM_DOMAINS = [
+  ...new Set([
+    "inloopmedia.com",
+    "amsglobal.io",
+    ...String(process.env.ALLOWED_DOMAIN || "")
+      .split(",")
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean),
+  ]),
+];
 
 export async function addMember(_prev, formData) {
   const me = await requireMember();
@@ -576,7 +584,10 @@ export async function createGroup(_prev, formData) {
   if (!name) return { error: "Give the group a name." };
   if (!GROUP_KINDS.some((k) => k.id === kind)) return { error: "Pick what the group does." };
   if (kind === "execution" && !isAdmin(me)) return { error: "Only an admin can make a CBO group." };
-  const notify = formData.getAll("notify").map(String).filter((e) => UPDATE_EVENTS.some((u) => u.id === e));
+  const notify = formData
+    .getAll("notify")
+    .map(String)
+    .filter((e) => UPDATE_EVENTS.some((u) => u.id === e));
   const owner = isAdmin(me) ? (isUuid(String(formData.get("owner") || "")) && kind !== "execution" ? String(formData.get("owner")) : null) : me.id;
   const row = { name, kind, notify };
   if (owner) row.owner_id = owner;
@@ -626,7 +637,11 @@ export async function updateGroup(id, patch) {
     await db().from("group_members").delete().eq("group_id", id).eq("member_id", patch.removeMember);
     // someone who leaves the group stops being its team lead
     const leads = teamLeadIdsOf(g).filter((x) => x !== patch.removeMember);
-    if (leads.length !== teamLeadIdsOf(g).length) await db().from("groups").update({ team_lead_ids: leads, team_lead_id: leads[0] || null }).eq("id", id);
+    if (leads.length !== teamLeadIdsOf(g).length)
+      await db()
+        .from("groups")
+        .update({ team_lead_ids: leads, team_lead_id: leads[0] || null })
+        .eq("id", id);
   }
   refreshGroups(id);
   return { ok: true };
@@ -670,11 +685,24 @@ export async function addLeadContact(leadId, type, value, label = "") {
   const me = await requireMember();
   const { data: lead } = await db().from("leads").select("id, assigned_to, extra_contacts").eq("id", leadId).maybeSingle();
   if (!lead || !canSeeLead(me, lead)) return { ok: false, error: "You can't edit this lead." };
-  const v = String(value || "").trim().slice(0, 200);
+  const v = String(value || "")
+    .trim()
+    .slice(0, 200);
   if (type === "email" ? !emailOk(v) : !/^\+?[\d\s()-]{7,20}$/.test(v)) return { ok: false, error: type === "email" ? "That email doesn't look right." : "That number doesn't look right." };
   const list = Array.isArray(lead.extra_contacts) ? lead.extra_contacts : [];
   if (list.some((c) => c.value.toLowerCase() === v.toLowerCase())) return { ok: false, error: "That one is already added." };
-  const next = [...list, { type: type === "email" ? "email" : "phone", value: v, label: String(label || "").trim().slice(0, 60), by: me.name, at: new Date().toISOString() }].slice(0, 20);
+  const next = [
+    ...list,
+    {
+      type: type === "email" ? "email" : "phone",
+      value: v,
+      label: String(label || "")
+        .trim()
+        .slice(0, 60),
+      by: me.name,
+      at: new Date().toISOString(),
+    },
+  ].slice(0, 20);
   const { error } = await db().from("leads").update({ extra_contacts: next, updated_at: new Date().toISOString() }).eq("id", leadId);
   if (error) return { ok: false, error: /extra_contacts/.test(error.message) ? "Run migration 024 in Supabase first." : error.message };
   await addEvents(leadId, me.id, [{ type: "contact_added", data: { kind: type, value: v } }]);
@@ -695,8 +723,34 @@ export async function removeLeadContact(leadId, value) {
 /** Quick search for the top bar: up to 8 leads this member can see. */
 export async function searchLeads(q) {
   const me = await requireMember();
-  const term = String(q || "").trim().slice(0, 80);
+  const term = String(q || "")
+    .trim()
+    .slice(0, 80);
   if (term.length < 2) return [];
   const rows = await listLeads(me, { q: term }).catch(() => []);
-  return rows.slice(0, 8).map((l) => ({ id: l.id, code: l.code, name: l.brand || [l.first_name, l.last_name].filter(Boolean).join(" "), person: [l.first_name, l.last_name].filter(Boolean).join(" "), phone: l.phone || "", status: l.status }));
+  return rows
+    .slice(0, 8)
+    .map((l) => ({
+      id: l.id,
+      code: l.code,
+      name: l.brand || [l.first_name, l.last_name].filter(Boolean).join(" "),
+      person: [l.first_name, l.last_name].filter(Boolean).join(" "),
+      phone: l.phone || "",
+      status: l.status,
+    }));
+}
+
+/** What the client needs (Social Media Management, Website, Performance…): the sales head and admin, before Won. */
+export async function setLeadNeeds(id, needs) {
+  const me = await requireMember();
+  if (!canSetNeeds(me)) return { ok: false, error: "Only the sales head and admin pick what the client needs." };
+  const { data: lead } = await db().from("leads").select("*").eq("id", id).maybeSingle();
+  if (!lead) return { ok: false, error: "Lead not found." };
+  if (!("needs" in lead)) return { ok: false, error: "Run migration 040_lead_needs.sql in Supabase first." };
+  const list = [...new Set((Array.isArray(needs) ? needs : []).filter((n) => NEEDS.includes(n)))];
+  const { error } = await db().from("leads").update({ needs: list, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  await addEvents(id, me.id, [{ type: "needs", data: { needs: list } }]);
+  revalidatePath(`/leads/${id}`);
+  return { ok: true };
 }

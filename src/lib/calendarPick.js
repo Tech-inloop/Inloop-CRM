@@ -6,6 +6,25 @@ import { db } from "@/lib/supabase/server";
 import { pushTo } from "@/lib/push";
 import { listGroups } from "@/lib/leads";
 import { runnersOf, teamLeadIdsOf } from "@/lib/groups";
+import { needsCalendar } from "@/lib/constants";
+
+/**
+ * Which of these brands get a content calendar: what the client needs (picked on the lead), else the brand's
+ * services; nothing known → yes. Brands: [{ id, lead_id, services }].
+ */
+export async function calendarBrandIds(brands) {
+  const leadIds = brands.map((b) => b.lead_id).filter(Boolean);
+  const { data, error } = leadIds.length ? await db().from("leads").select("id, needs").in("id", leadIds) : { data: [] };
+  const needs = Object.fromEntries((error ? [] : data || []).map((l) => [l.id, l.needs || []]));
+  return new Set(
+    brands
+      .filter((b) => {
+        const n = needs[b.lead_id] || [];
+        return needsCalendar(n.length ? n : (b.services || []).map((s) => s.name).filter(Boolean));
+      })
+      .map((b) => b.id),
+  );
+}
 
 /** The creative strategists: their team leads, the people who run the group, and the members. */
 export async function strategyPeople() {
@@ -26,6 +45,8 @@ export async function pickerIds() {
 /** Onboarding: open the brand's calendar for picking and tell the team lead. Never fails the onboarding. */
 export async function openCalendarPick(brand) {
   try {
+    // Website-only / performance-only clients don't get a content calendar
+    if (!(await calendarBrandIds([brand])).has(brand.id)) return;
     const { error } = await db().from("brands").update({ calendar_pick_open: true }).eq("id", brand.id).is("calendar_owner_id", null);
     if (error) return;
     await pushTo(await pickerIds(), {

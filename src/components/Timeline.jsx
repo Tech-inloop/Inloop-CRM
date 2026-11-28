@@ -12,25 +12,52 @@ export const describe = (e) => {
         </>
       );
     case "assigned":
-      return e.data?.to ? <>Assigned to <span className="text-ink">{e.data.to}</span></> : "Unassigned";
+      return e.data?.to ? (
+        <>
+          Assigned to <span className="text-ink">{e.data.to}</span>
+        </>
+      ) : (
+        "Unassigned"
+      );
     case "remarks":
       return <>Remarks updated{e.data?.text ? <span className="mt-1 block whitespace-pre-wrap text-ink/80">{e.data.text}</span> : null}</>;
     case "brief":
       return <>Brief updated{e.data?.text ? <span className="mt-1 block whitespace-pre-wrap text-ink/80">{e.data.text}</span> : null}</>;
     case "meeting":
-      return <>{MEETING_KINDS[e.data?.kind]?.label || "Meeting"} booked for <span className="text-ink">{fmtMeeting(e.data?.at)}</span></>;
+      return (
+        <>
+          {MEETING_KINDS[e.data?.kind]?.label || "Meeting"} booked for <span className="text-ink">{fmtMeeting(e.data?.at)}</span>
+        </>
+      );
     case "meeting_cancelled":
-      return <>{MEETING_KINDS[e.data?.kind]?.label || "Meeting"} on {fmtMeeting(e.data?.at)} cancelled</>;
+      return (
+        <>
+          {MEETING_KINDS[e.data?.kind]?.label || "Meeting"} on {fmtMeeting(e.data?.at)} cancelled
+        </>
+      );
     case "proposal_shared":
       return "Brief shared with the creative strategists";
     case "proposal_picked":
-      return <>Brief picked up by <span className="text-ink">{e.data?.to}</span></>;
+      return (
+        <>
+          Brief picked up by <span className="text-ink">{e.data?.to}</span>
+        </>
+      );
     case "proposal_crl_skipped":
       return <>Documents submitted — no CRL{e.data?.skipped?.length ? ` (left out: ${e.data.skipped.join(", ")})` : ""}</>;
     case "proposal_crl_queued":
       return "Documents sent to the CRL bot";
     case "proposal_crl_ready":
-      return <>CRL ready{e.data?.url ? <a href={e.data.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-brand hover:underline">{e.data.url}</a> : null}</>;
+      return (
+        <>
+          CRL ready
+          {e.data?.url ? (
+            <a href={e.data.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-brand hover:underline">
+              {e.data.url}
+            </a>
+          ) : null}
+        </>
+      );
     case "proposal_crl_failed":
       return <>CRL bot failed{e.data?.text ? <span className="mt-1 block text-rose-300/80">{e.data.text}</span> : null}</>;
     case "proposal_proposal_queued":
@@ -40,7 +67,12 @@ export const describe = (e) => {
     case "proposal_review":
       return <>Proposal deck v{e.data?.revision || 1} ready for review</>;
     case "proposal_changes":
-      return <>Changes requested for v{e.data?.revision}{e.data?.text ? <span className="mt-1 block whitespace-pre-wrap text-ink/80">{e.data.text}</span> : null}</>;
+      return (
+        <>
+          Changes requested for v{e.data?.revision}
+          {e.data?.text ? <span className="mt-1 block whitespace-pre-wrap text-ink/80">{e.data.text}</span> : null}
+        </>
+      );
     case "proposal_done":
       return <span className="text-emerald-300">Proposal deck ready</span>;
     case "onboarding_started":
@@ -50,7 +82,17 @@ export const describe = (e) => {
     case "onboarded":
       return <span className="text-emerald-400">MOU signed — {e.data?.brand} is onboarded</span>;
     case "contact_added":
-      return <>Added another {e.data?.kind === "email" ? "email" : "number"}: <span className="text-ink">{e.data?.value}</span></>;
+      return (
+        <>
+          Added another {e.data?.kind === "email" ? "email" : "number"}: <span className="text-ink">{e.data?.value}</span>
+        </>
+      );
+    case "needs":
+      return (
+        <>
+          Client needs: <span className="text-ink">{(e.data?.needs || []).join(", ") || "none"}</span>
+        </>
+      );
     case "brand_deleted":
       return <span className="text-rose-400">Brand {e.data?.brand} was deleted</span>;
     default:

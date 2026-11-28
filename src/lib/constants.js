@@ -97,8 +97,14 @@ export const SERVICES = [
   "Not sure / open to recommendation",
 ];
 
-export const BUDGETS = ["Under ₹50K / month", "₹50K to ₹2L / month", "₹2L to ₹5L / month", "₹5L+ / month", "Not sure yet"];
+/** What a client can need (picked on the lead before it's Won). */
+export const NEEDS = SERVICES.filter((s) => !s.startsWith("Not sure"));
+/** The needs that come with a content calendar. */
+export const CALENDAR_NEEDS = ["Social Media Management", "Content Creation"];
+/** Does a brand with these needs / services get a content calendar? Nothing known → yes. */
+export const needsCalendar = (names = []) => !names.length || names.some((n) => CALENDAR_NEEDS.includes(n));
 
+export const BUDGETS = ["Under ₹50K / month", "₹50K to ₹2L / month", "₹2L to ₹5L / month", "₹5L+ / month", "Not sure yet"];
 
 // Updates a group can receive in its feed (Team → group → "Posts here"). Order = how they're listed.
 export const UPDATE_EVENTS = [
@@ -197,15 +203,33 @@ export const PLATFORMS = [
 ];
 /** A calendar post can go out on several platforms; stored as "instagram,facebook". */
 export const platformList = (v) => {
-  const ids = String(v || "").split(/[,\s/&+|]+/).map((x) => x.trim().toLowerCase()).filter((x) => PLATFORMS.some((p) => p.id === x));
+  const ids = String(v || "")
+    .split(/[,\s/&+|]+/)
+    .map((x) => x.trim().toLowerCase())
+    .filter((x) => PLATFORMS.some((p) => p.id === x));
   return [...new Set(ids)];
 };
 export const platformValue = (list) => {
   const ids = platformList(Array.isArray(list) ? list.join(",") : list);
   return ids.length ? ids.join(",") : "instagram";
 };
-export const platformLabel = (v) => platformList(v).map((id) => PLATFORMS.find((p) => p.id === id).label).join(", ");
+export const platformLabel = (v) =>
+  platformList(v)
+    .map((id) => PLATFORMS.find((p) => p.id === id).label)
+    .join(", ");
 export const kindPlural = (id) => ({ post: "Static posts", story: "Stories", other: "Other" })[id] || `${taskKindLabel(id)}s`;
 
 /** One colour per kind of content (calendar chips, task tags) */
-export const KIND_COLOR = { post: "#3b82f6", carousel: "#8b5cf6", story: "#ec4899", reel: "#f59e0b", video: "#06b6d4", design: "#10b981", website: "#64748b", shoot: "#ef4444", posting: "#0ea5e9", calendar: "#a855f7", other: "#64748b" };
+export const KIND_COLOR = {
+  post: "#3b82f6",
+  carousel: "#8b5cf6",
+  story: "#ec4899",
+  reel: "#f59e0b",
+  video: "#06b6d4",
+  design: "#10b981",
+  website: "#64748b",
+  shoot: "#ef4444",
+  posting: "#0ea5e9",
+  calendar: "#a855f7",
+  other: "#64748b",
+};

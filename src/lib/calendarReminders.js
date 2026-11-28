@@ -15,7 +15,7 @@ import { listGroups } from "@/lib/leads";
 import { teamLeadIdsOf } from "@/lib/groups";
 import { loadItems, loadPlans, planProgress, shiftMonth, thisMonth } from "@/lib/calendar";
 import { kindPlural } from "@/lib/constants";
-import { pickerIds } from "@/lib/calendarPick";
+import { calendarBrandIds, pickerIds } from "@/lib/calendarPick";
 
 const IST = "Asia/Kolkata";
 const DAY = 864e5;
@@ -53,9 +53,15 @@ async function people() {
 }
 
 async function activeBrands() {
-  let { data, error } = await db().from("brands").select("id, name, calendar_owner_id").eq("stage", "active");
-  if (error) ({ data } = await db().from("brands").select("id, name").eq("stage", "active")); // before migration 039
+  let { data, error } = await db().from("brands").select("id, name, lead_id, services, calendar_owner_id").eq("stage", "active");
+  if (error) ({ data } = await db().from("brands").select("id, name, lead_id, services").eq("stage", "active")); // before migration 039
   return data || [];
+}
+
+/** Only the brands that get a content calendar (not website-only / performance-only clients). */
+async function calendarBrands(brands) {
+  const keep = await calendarBrandIds(brands);
+  return brands.filter((b) => keep.has(b.id));
 }
 
 /** Brands with nothing at all on next week's calendar (Monday–Sunday). Skips brands whose plan is zero. */
@@ -147,7 +153,7 @@ export async function calendarReminders(now = Date.now(), { dry = false } = {}) 
 
   // 2 — calendars short of the deliverables (Mondays and Thursdays)
   if (wd === 1 || wd === 4 || dry) {
-    const behind = await behindPlan(now, brands);
+    const behind = await behindPlan(now, await calendarBrands(brands));
     if (behind.length) {
       const mon = (m) => new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${m}-01T00:00:00Z`));
       const byBrand = {};
@@ -168,7 +174,7 @@ export async function calendarReminders(now = Date.now(), { dry = false } = {}) 
   }
   // 3 — next week's calendar not made yet (Monday to Saturday, until it is)
   if (wd <= 6) {
-    const week = await nextWeekEmpty(now, brands);
+    const week = await nextWeekEmpty(now, await calendarBrands(brands));
     if (week.brands.length) {
       const leads = await pickerIds();
       const names = week.brands.map((b) => b.name);

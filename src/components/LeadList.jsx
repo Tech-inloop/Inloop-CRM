@@ -26,7 +26,10 @@ export default function LeadList({ leads, owners }) {
         </thead>
         <tbody>
           {leads.map((l) => (
-            <tr key={l.id} className="group relative block border-b border-line transition last:border-0 hover:bg-panel-2/60 md:table-row [&>td]:md:border-b [&>td]:md:border-line [&:last-child>td]:md:border-0">
+            <tr
+              key={l.id}
+              className="group relative block border-b border-line transition last:border-0 hover:bg-panel-2/60 md:table-row [&>td]:md:border-b [&>td]:md:border-line [&:last-child>td]:md:border-0"
+            >
               <td className="block px-3 pt-3 md:table-cell md:px-5 md:py-3.5">
                 <Link href={`/leads/${l.id}`} className="flex items-center gap-3 after:absolute after:inset-0">
                   <BrandMark name={l.brand || fullName(l)} size={36} />
@@ -49,6 +52,8 @@ export default function LeadList({ leads, owners }) {
                     <Avatar name={owners[l.assigned_to] || "?"} size={24} />
                     {owners[l.assigned_to] || "—"}
                   </span>
+                ) : l.status === "Won" ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-2.5 py-1 font-medium text-emerald-400">Client</span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/15 px-2.5 py-1 font-medium text-amber-300">Unassigned</span>
                 )}

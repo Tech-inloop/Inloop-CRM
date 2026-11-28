@@ -14,14 +14,16 @@ export async function ensureBrand(leadId, actorId) {
   const { data: found } = await db().from("brands").select("*").eq("lead_id", leadId).maybeSingle();
   if (found) return found;
   const [{ data: lead }, { data: proposal }] = await Promise.all([
-    db().from("leads").select(LEAD_FIELDS).eq("id", leadId).maybeSingle(),
+    db().from("leads").select("*").eq("id", leadId).maybeSingle(),
     db().from("proposals").select("commercials").eq("lead_id", leadId).maybeSingle(),
   ]);
   if (!lead) return null;
   const row = {
     lead_id: leadId,
     name: lead.brand || fullName(lead),
-    services: servicesFromCommercials(proposal?.commercials),
+    services: servicesFromCommercials(proposal?.commercials).length
+      ? servicesFromCommercials(proposal?.commercials)
+      : (lead.needs || []).map((name) => ({ name, scope: "", fee: "", billing: "Monthly" })),
     terms: {
       ...DEFAULT_TERMS,
       client_legal_name: lead.brand || "",

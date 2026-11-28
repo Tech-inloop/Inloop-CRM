@@ -42,10 +42,11 @@ export const canBookProposal = (me, lead) => isStaff(me) || isSalesHead(me) || (
 // Proposal pipeline
 export const canSeeBriefs = (me) => isStaff(me) || isStrategist(me);
 /** A strategist sees briefs nobody has picked up yet, and the ones they picked up. */
-export const canSeeProposal = (me, p) =>
-  isStaff(me) || (isStrategist(me) && (!p.strategist_id || p.strategist_id === me.id));
+export const canSeeProposal = (me, p) => isStaff(me) || (isStrategist(me) && (!p.strategist_id || p.strategist_id === me.id));
 export const canWorkOnProposal = (me, p) => isStaff(me) || (isStrategist(me) && p.strategist_id === me.id);
 export const canEnterCommercials = (me) => isStaff(me);
+/** What the client needs (Social media, Website, Performance…): the sales head (Arushi) and admin. */
+export const canSetNeeds = (me) => isAdmin(me) || isSalesHead(me);
 
 // Phase 2 — brands and tasks
 export const isExecHead = (me) => inGroupKind(me, "execution") || !!me.opsHead;
@@ -85,8 +86,7 @@ export const canPostContent = (me) => isStaff(me) || isSocial(me);
  * Lock / unlock a brand's content calendar: the creative strategists' team lead, whoever runs that group
  * (its manager / CBO) and admin. While it's locked, no one can change it.
  */
-export const canLockCalendar = (me) =>
-  isAdmin(me) || (me.leadGroups || []).some((g) => g.kind === "strategy") || (me.ledGroups || []).some((g) => g.kind === "strategy");
+export const canLockCalendar = (me) => isAdmin(me) || (me.leadGroups || []).some((g) => g.kind === "strategy") || (me.ledGroups || []).some((g) => g.kind === "strategy");
 /** Delete posts from a brand's content calendar (one by one, or clear a month): admin and the creative strategists. */
 export const canDeleteCalendar = (me) => isAdmin(me) || isStrategist(me) || canLockCalendar(me);
 /** The monthly deliverables of a brand (how many posts, reels, stories…) are set by admin only. */
