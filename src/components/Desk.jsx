@@ -59,7 +59,7 @@ export function Section({ title, count, action, children, empty, className = "",
   );
 }
 
-const KIND_ICON = { video: "video", reel: "video", website: "link", carousel: "board", story: "sparkle", design: "sparkle" };
+const KIND_ICON = { video: "video", reel: "video", website: "link", carousel: "board", story: "sparkle", design: "sparkle", calendar: "calendar" };
 
 function duePill(t) {
   if (!t.due_at) return { text: "No date", tone: "text-faint" };

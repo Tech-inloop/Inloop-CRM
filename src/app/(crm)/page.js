@@ -18,6 +18,7 @@ import { Block, HomeHeader } from "@/components/Home";
 import { canSeeAllLeads, canSeeLeads, headsTeam, isExecHead, isOpsHead, isSalesHead, isStrategist, leadTeam, myTeam, salesTeam } from "@/lib/permissions";
 import TeamToCheck from "@/components/TeamToCheck";
 import TeamTasks from "@/components/TeamTasks";
+import CalendarPicks from "@/components/CalendarPicks";
 import { listGroups } from "@/lib/leads";
 import { headIdsOf, ownHeadIds, runsGroup, sortGroups, teamLeadIdsOf } from "@/lib/groups";
 
@@ -64,7 +65,11 @@ async function GroupCards({ me }) {
   const ids = [...new Set(mine.flatMap((g) => [...headIdsOf(g), ...teamLeadIdsOf(g)]))];
   const { data } = ids.length ? await db().from("members").select("id, name").in("id", ids) : { data: [] };
   const name = Object.fromEntries([...(data || []), ...mine.flatMap((g) => g.members)].map((m) => [m.id, m.name]));
-  const names = (list) => list.map((id) => name[id]).filter(Boolean).join(", ");
+  const names = (list) =>
+    list
+      .map((id) => name[id])
+      .filter(Boolean)
+      .join(", ");
   return (
     <section className="rise">
       <h2 className="mb-2 text-[13px] font-medium text-muted">
@@ -129,6 +134,7 @@ function AdminTop({ me }) {
   return (
     <div className="flex flex-col gap-4">
       <BrandMonth />
+      <CalendarPicks me={me} />
       <GroupCards me={me} />
     </div>
   );
@@ -138,6 +144,7 @@ function AdminTop({ me }) {
 function Side({ me, desk = false }) {
   return (
     <>
+      <CalendarPicks me={me} />
       {!desk && <TeamToCheck me={me} />}
       {!desk && <TeamTasks me={me} />}
       <MyGroups me={me} />
@@ -145,9 +152,7 @@ function Side({ me, desk = false }) {
   );
 }
 
-
 export const metadata = { title: "Dashboard" };
-
 
 /** Execution heads (Udit, Krish): their teams' work — what to check, what's late, how each brand is doing. */
 async function ExecDashboard({ me, sp }) {
@@ -212,27 +217,12 @@ export default async function Dashboard({ searchParams }) {
   if (staff) {
     const [data, tasks, brands, people] = await Promise.all([dashboardData(me), listTasks(me, { view: "all" }), listBrands(), listMakers(me)]);
     const active = brands.filter((b) => b.stage === "active").map((b) => ({ id: b.id, name: b.name }));
-    return (
-      <AdminOverview
-        me={me}
-        data={data}
-        brands={brands}
-        tasks={tasks}
-        actions={<QuickAssign brands={active} people={people} label="New task" />}
-        meetings={<AdminTop me={me} />}
-      />
-    );
+    return <AdminOverview me={me} data={data} brands={brands} tasks={tasks} actions={<QuickAssign brands={active} people={people} label="New task" />} meetings={<AdminTop me={me} />} />;
   }
 
   // Everyone else: the admin look, about their own work (tasks, leads and/or briefs — whatever they do)
   const lead = leadTeam(me).length > 0;
-  const [data, tasks, followUps, teamTasks, brands] = await Promise.all([
-    dashboardData(me),
-    listTasks(me, { view: "mine" }),
-    myFollowUps(me),
-    lead ? leadAllTasks(me) : [],
-    lead ? listBrands() : [],
-  ]);
+  const [data, tasks, followUps, teamTasks, brands] = await Promise.all([dashboardData(me), listTasks(me, { view: "mine" }), myFollowUps(me), lead ? leadAllTasks(me) : [], lead ? listBrands() : []]);
   const active = brands.filter((b) => b.stage === "active").map((b) => ({ id: b.id, name: b.name }));
   return (
     <UserHome

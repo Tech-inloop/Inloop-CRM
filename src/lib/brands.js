@@ -45,12 +45,7 @@ export async function ensureBrand(leadId, actorId) {
 export async function getBrandForLead(leadId) {
   const { data: brand, error } = await db().from("brands").select("*").eq("lead_id", leadId).maybeSingle();
   if (error || !brand) return null;
-  const { data: docs } = await db()
-    .from("lead_documents")
-    .select("id, kind, name, storage_path, url, size, created_at")
-    .eq("lead_id", leadId)
-    .in("kind", ["mou", "mou_signed"])
-    .order("created_at");
+  const { data: docs } = await db().from("lead_documents").select("id, kind, name, storage_path, url, size, created_at").eq("lead_id", leadId).in("kind", ["mou", "mou_signed"]).order("created_at");
   return { ...brand, docs: await signDocs(docs || []) };
 }
 
@@ -110,7 +105,13 @@ export async function onboardBrand(brand, actorId) {
   const { title, body } = celebration(brand.name);
   await db().from("celebrations").insert({ brand_id: brand.id, title, body });
   const { data: everyone } = await db().from("members").select("id").eq("active", true);
-  await pushTo((everyone || []).map((m) => m.id), { title, body, url: `/brands/${brand.id}`, tag: `onboard-${brand.id}` });
+  await pushTo(
+    (everyone || []).map((m) => m.id),
+    { title, body, url: `/brands/${brand.id}`, tag: `onboard-${brand.id}` },
+  );
+  // The creative strategists' team lead picks up its content calendar
+  const { openCalendarPick } = await import("@/lib/calendarPick");
+  await openCalendarPick(brand);
   return { ok: true, actorId };
 }
 
@@ -123,11 +124,6 @@ export const celebration = (name) => ({
 export async function unseenCelebrations(me) {
   const { data: m } = await db().from("members").select("celebrations_seen_at").eq("id", me.id).maybeSingle();
   if (!m) return [];
-  const { data } = await db()
-    .from("celebrations")
-    .select("id, title, body, created_at, brand_id")
-    .gt("created_at", m.celebrations_seen_at)
-    .order("created_at", { ascending: false })
-    .limit(3);
+  const { data } = await db().from("celebrations").select("id, title, body, created_at, brand_id").gt("created_at", m.celebrations_seen_at).order("created_at", { ascending: false }).limit(3);
   return data || [];
 }

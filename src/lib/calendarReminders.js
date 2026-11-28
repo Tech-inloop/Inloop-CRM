@@ -6,12 +6,16 @@ import "server-only";
 //     Goes to the CBO who runs the designers / video editors (Krrish).
 //   • Calendar not updated — a brand's calendar has fewer posts than its monthly deliverables. Mondays and
 //     Thursdays; this month, plus next month from the 20th. Goes to the creative strategists, their CBO (Udit) and Krrish.
+//   • Next week not planned — each week's posts are planned the week before they go out. Monday to Saturday, a
+//     brand with no posts at all next week reminds the creative strategists' team lead (Abhay) and whoever makes
+//     that brand's calendar, until it's planned.
 import { db } from "@/lib/supabase/server";
 import { pushTo } from "@/lib/push";
 import { listGroups } from "@/lib/leads";
 import { teamLeadIdsOf } from "@/lib/groups";
 import { loadItems, loadPlans, planProgress, shiftMonth, thisMonth } from "@/lib/calendar";
 import { kindPlural } from "@/lib/constants";
+import { pickerIds } from "@/lib/calendarPick";
 
 const IST = "Asia/Kolkata";
 const DAY = 864e5;
@@ -49,8 +53,21 @@ async function people() {
 }
 
 async function activeBrands() {
-  const { data } = await db().from("brands").select("id, name").eq("stage", "active");
+  let { data, error } = await db().from("brands").select("id, name, calendar_owner_id").eq("stage", "active");
+  if (error) ({ data } = await db().from("brands").select("id, name").eq("stage", "active")); // before migration 039
   return data || [];
+}
+
+/** Brands with nothing at all on next week's calendar (Monday–Sunday). Skips brands whose plan is zero. */
+async function nextWeekEmpty(now, brands) {
+  const wd = weekday(now);
+  const from = dayKey(now + (8 - wd) * DAY);
+  const to = dayKey(now + (14 - wd) * DAY);
+  const ids = brands.map((b) => b.id);
+  const [{ data }, plans] = await Promise.all([db().from("calendar_items").select("brand_id").in("brand_id", ids).gte("publish_on", from).lte("publish_on", to), loadPlans(ids, from.slice(0, 7))]);
+  const planned = new Set((data || []).map((i) => i.brand_id));
+  const zero = (b) => plans[b.id] && !Object.values(plans[b.id].targets).some((n) => n > 0);
+  return { from, to, brands: brands.filter((b) => !planned.has(b.id) && !zero(b)) };
 }
 
 /** Posts from today to the end of next week (or this week on Mon/Tue) that nobody has been given yet. */
@@ -62,7 +79,10 @@ async function unassigned(now, brands) {
   const { data } = await db()
     .from("calendar_items")
     .select("id, brand_id, title, kind, publish_on, status")
-    .in("brand_id", brands.map((b) => b.id))
+    .in(
+      "brand_id",
+      brands.map((b) => b.id),
+    )
     .is("task_id", null)
     .neq("status", "posted")
     .gte("publish_on", dayKey(now))
@@ -136,9 +156,7 @@ export async function calendarReminders(now = Date.now(), { dry = false } = {}) 
       const one = behind.length === 1 ? behind[0] : null;
       const msg = {
         title: one ? `🗓️ ${one.brand.name}: calendar not updated` : names.length === 1 ? `🗓️ ${names[0]}: calendar not updated` : `🗓️ ${names.length} brands: calendar not updated`,
-        body: one
-          ? `${mon(one.month)}: ${one.planned}/${one.target} planned — add ${list(one.missing)}.`
-          : `Short of the deliverables: ${list(names.map((n) => `${n} (${byBrand[n].join(", ")})`))}.`,
+        body: one ? `${mon(one.month)}: ${one.planned}/${one.target} planned — add ${list(one.missing)}.` : `Short of the deliverables: ${list(names.map((n) => `${n} (${byBrand[n].join(", ")})`))}.`,
         url: one ? `/calendar?brand=${one.brand.id}&month=${one.month}` : `/calendar?month=${behind[0].month}`,
         tag: `cal-behind-${today}`,
       };
@@ -146,6 +164,26 @@ export async function calendarReminders(now = Date.now(), { dry = false } = {}) 
       const to = dry ? recipients : await claim("cal-behind", recipients, today);
       if (!dry) await pushTo(to, msg);
       out.behind = { brands: behind.length, to: to.length, ...(dry ? { msg, detail: behind.map((x) => ({ brand: x.brand.name, month: x.month, missing: x.missing })) } : {}) };
+    }
+  }
+  // 3 — next week's calendar not made yet (Monday to Saturday, until it is)
+  if (wd <= 6) {
+    const week = await nextWeekEmpty(now, brands);
+    if (week.brands.length) {
+      const leads = await pickerIds();
+      const names = week.brands.map((b) => b.name);
+      const one = week.brands.length === 1 ? week.brands[0] : null;
+      const msg = {
+        title: one ? `🗓️ ${one.name}: next week's calendar isn't made` : `🗓️ Next week's calendar isn't made — ${names.length} brands`,
+        body: `Nothing planned for ${short(week.from)}–${short(week.to)}${one ? "" : `: ${list(names)}`}. Make it this week.`,
+        url: one ? `/calendar?brand=${one.id}&month=${week.from.slice(0, 7)}` : `/calendar?month=${week.from.slice(0, 7)}`,
+        tag: `cal-week-${today}`,
+      };
+      const owners = week.brands.map((b) => b.calendar_owner_id).filter(Boolean);
+      const recipients = [...new Set([...leads, ...owners])];
+      const to = dry ? recipients : await claim("cal-week", recipients, today);
+      if (!dry) await pushTo(to, msg);
+      out.nextWeek = { brands: week.brands.length, to: to.length, ...(dry ? { msg, detail: names } : {}) };
     }
   }
   return { calendar: out };

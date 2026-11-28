@@ -29,7 +29,7 @@ export const GROUP_LOOK = {
   waiting: { color: "#8b5cf6", icon: "team" },
 };
 
-const KIND_ICON = { video: "video", reel: "video", website: "link", carousel: "board", story: "sparkle", design: "sparkle" };
+const KIND_ICON = { video: "video", reel: "video", website: "link", carousel: "board", story: "sparkle", design: "sparkle", calendar: "calendar" };
 const COLS = "md:grid-cols-[minmax(0,1fr)_120px_118px_92px_96px_148px]";
 const COLS_ME = "md:grid-cols-[minmax(0,1fr)_130px_92px_96px_160px]";
 

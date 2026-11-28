@@ -11,7 +11,10 @@ import { PLAN_KINDS, TASK_KINDS, platformValue } from "@/lib/constants";
 import { canDeleteCalendar, canEditCalendar, canLockCalendar, canSetPlan, canAssignTasks } from "@/lib/permissions";
 import { calendarLock, monthStart, shiftMonth, validMonth } from "@/lib/calendar";
 
-const str = (v, max = 4000) => String(v ?? "").trim().slice(0, max);
+const str = (v, max = 4000) =>
+  String(v ?? "")
+    .trim()
+    .slice(0, max);
 const isUuid = (v) => /^[0-9a-f-]{36}$/i.test(String(v || ""));
 const isDay = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) && !Number.isNaN(Date.parse(v));
 
@@ -106,7 +109,11 @@ export async function saveCalendarItem(input) {
     if (error && isMissingColumn(error)) ({ error } = await db().from("calendar_items").update(strip(row, error)).eq("id", item.id));
     if (error) return { ok: false, error: friendly(error) };
     // Keep a linked task's title in step
-    if (item.task_id && row.title !== item.title) await db().from("tasks").update({ title: row.title.slice(0, 160) }).eq("id", item.task_id);
+    if (item.task_id && row.title !== item.title)
+      await db()
+        .from("tasks")
+        .update({ title: row.title.slice(0, 160) })
+        .eq("id", item.task_id);
     refresh(item.brand_id);
     return { ok: true, id: item.id };
   }
@@ -116,7 +123,12 @@ export async function saveCalendarItem(input) {
     if (locked) return { ok: false, error: locked };
   }
   if (!brand) return { ok: false, error: "Pick a brand." };
-  const insert = (r) => db().from("calendar_items").insert({ ...r, brand_id: brand.id, created_by: me.id }).select("id").single();
+  const insert = (r) =>
+    db()
+      .from("calendar_items")
+      .insert({ ...r, brand_id: brand.id, created_by: me.id })
+      .select("id")
+      .single();
   let { data, error } = await insert(row);
   if (error && isMissingColumn(error)) ({ data, error } = await insert(strip(row, error)));
   if (error) return { ok: false, error: friendly(error) };
@@ -205,8 +217,13 @@ export async function assignCalendarItem(id, { assignee_id, due_at, brief, prior
       const brand = await getBrand(item.brand_id);
       const own = await postFolders(brand, item, me.id);
       const known = new Map((await brandFolders(item.brand_id)).map((f) => [f.drive_id, f.path]));
-      const extra = (Array.isArray(folders) ? folders : []).filter((f) => known.has(f?.drive_id) && !own.some((o) => o.drive_id === f.drive_id)).slice(0, 20).map((f) => ({ drive_id: f.drive_id, path: known.get(f.drive_id), note: str(f.note, 300) }));
-      await db().from("task_folders").insert([...own, ...extra].map((f, i) => ({ task_id: res.id, drive_id: f.drive_id, path: f.path, note: f.note || "", sort: i })));
+      const extra = (Array.isArray(folders) ? folders : [])
+        .filter((f) => known.has(f?.drive_id) && !own.some((o) => o.drive_id === f.drive_id))
+        .slice(0, 20)
+        .map((f) => ({ drive_id: f.drive_id, path: known.get(f.drive_id), note: str(f.note, 300) }));
+      await db()
+        .from("task_folders")
+        .insert([...own, ...extra].map((f, i) => ({ task_id: res.id, drive_id: f.drive_id, path: f.path, note: f.note || "", sort: i })));
     }
   } catch (err) {
     console.error("Drive folders for the post failed:", err.message);
@@ -256,7 +273,10 @@ export async function fetchSheetCsv(link) {
   const res = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`, { redirect: "follow", cache: "no-store" }).catch(() => null);
   const type = res?.headers.get("content-type") || "";
   if (!res || !res.ok || !/text\/csv|text\/plain|application\/octet-stream/.test(type)) {
-    return { ok: false, error: "Couldn't open the sheet. In Google Sheets click Share → General access → \"Anyone with the link\" (Viewer), then try again — or download it as .xlsx / .csv and upload the file." };
+    return {
+      ok: false,
+      error: 'Couldn\'t open the sheet. In Google Sheets click Share → General access → "Anyone with the link" (Viewer), then try again — or download it as .xlsx / .csv and upload the file.',
+    };
   }
   const text = await res.text();
   if (text.length > 3_000_000) return { ok: false, error: "That sheet is too big — upload one month at a time." };
@@ -299,8 +319,63 @@ export async function importCalendarItems(brandId, month, items, { replace = fal
     await db().from("calendar_items").delete().eq("brand_id", brand.id).gte("publish_on", `${month}-01`).lt("publish_on", next).is("task_id", null).eq("status", "planned");
   }
   let { error } = await db().from("calendar_items").insert(rows);
-  if (error && isMissingColumn(error)) ({ error } = await db().from("calendar_items").insert(rows.map((r) => strip(r, error))));
+  if (error && isMissingColumn(error))
+    ({ error } = await db()
+      .from("calendar_items")
+      .insert(rows.map((r) => strip(r, error))));
   if (error) return { ok: false, error: friendly(error) };
   refresh(brand.id);
   return { ok: true, count: rows.length };
+}
+
+/**
+ * A newly onboarded brand's content calendar: the creative strategists' team lead (or manager / admin) picks it
+ * up — `assigneeId` empty = "I'll make it", else it goes to that strategist as a task (no due date: each week is
+ * planned the week before it goes out).
+ */
+export async function pickCalendar(brandId, assigneeId = "") {
+  const me = await requireMember();
+  if (!canLockCalendar(me)) return { ok: false, error: "Only the creative strategists' team lead or manager picks this up." };
+  const brand = await getBrand(brandId);
+  if (!brand) return { ok: false, error: "Brand not found." };
+  const { strategyPeople } = await import("@/lib/calendarPick");
+  const { members } = await strategyPeople();
+  const to = assigneeId && assigneeId !== me.id ? members.find((m) => m.id === assigneeId) : null;
+  if (assigneeId && assigneeId !== me.id && !to) return { ok: false, error: "Pick someone from the creative strategists." };
+  const owner = to ? to.id : me.id;
+
+  const { data: taken, error } = await db()
+    .from("brands")
+    .update({ calendar_owner_id: owner, calendar_pick_open: false, updated_at: new Date().toISOString() })
+    .eq("id", brand.id)
+    .eq("calendar_pick_open", true)
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: /calendar_/.test(error.message) ? "Run migration 039_calendar_pick.sql in Supabase first." : error.message };
+  if (!taken) return { ok: false, error: "Someone already picked this up." };
+
+  if (to) {
+    const { TASK_FIELDS, logTask, notifyTask } = await import("@/lib/tasks");
+    const row = {
+      brand_id: brand.id,
+      title: `Make content calendar — ${brand.name}`,
+      kind: "calendar",
+      brief: `Plan ${brand.name}'s content calendar on the Calendar page. Plan each week's posts a week before they go out.`,
+      assignee_id: to.id,
+      assigned_by: me.id,
+      due_at: null,
+      priority: "medium",
+    };
+    const { data: task, error: e } = await db().from("tasks").insert(row).select(TASK_FIELDS).single();
+    if (e) {
+      await db().from("brands").update({ calendar_owner_id: null, calendar_pick_open: true }).eq("id", brand.id);
+      return { ok: false, error: /kind_check/.test(e.message) ? "Run migration 039_calendar_pick.sql in Supabase first." : e.message };
+    }
+    await logTask(task.id, me.id, "created", { to: to.name });
+    await notifyTask([to.id], task, "New task assigned");
+    pingLive("tasks");
+    revalidatePath("/tasks");
+  }
+  revalidatePath("/");
+  return { ok: true, mine: !to };
 }

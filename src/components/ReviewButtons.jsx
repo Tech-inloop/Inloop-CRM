@@ -43,7 +43,7 @@ export default function ReviewButtons({ task }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 sm:flex-nowrap [&>button]:whitespace-nowrap">
         {clientAsked ? (
           <button disabled={pending} onClick={() => setNote(task.feedback || "")} className="btn-primary btn-sm">
             <Icon name="refresh" size={13} /> Send to {task.assignee?.name.split(" ")[0] || "team"} to fix

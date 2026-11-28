@@ -85,7 +85,7 @@ export function ReviewRow({ t, files = [] }) {
           {t.status === "client_rejected" && t.feedback && <span className="mt-1 line-clamp-2 block text-[12px] text-orange-500">Client: “{t.feedback}”</span>}
         </span>
       </Link>
-      <div className="shrink-0 sm:max-w-[340px]">
+      <div className="shrink-0">
         <ReviewButtons task={t} />
       </div>
     </li>
